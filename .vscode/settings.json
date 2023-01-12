@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "/home/pkd/Desktop/telegram-bot",
+        "./client"
+    ]
+}
