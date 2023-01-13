@@ -6,6 +6,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/shm.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
 
 
 #include "../include/python.h"
@@ -15,6 +18,7 @@
 
 int sockfd;
 
+int co_shmid;
 
 void *handle_connection(void *threadarg);
 
@@ -49,6 +53,25 @@ void launch_server(int port, int adress) {
     }
     dbg(1,"Listening for connections on port %d...", port);
 
+    // now do the memory stuff
+    // Create shared memory segment
+    co_shmid = shmget(IPC_PRIVATE, sizeof(conn_list), IPC_CREAT | 0666);
+    if (co_shmid < 0) {
+        perror("Error creating shared memory segment");
+        exit(1);
+    }
+
+    // Attach shared memory segment to the server process
+    conn_list *list = shmat(co_shmid, NULL, 0);
+    if (list == (void*)-1) {
+        perror("Error attaching shared memory segment");
+        exit(1);
+    }
+
+    printf(" list = %p\n",list);
+    printf("shmid = %d\n",co_shmid);
+    
+
     connect:
 
     // Accept incoming connections
@@ -58,57 +81,88 @@ void launch_server(int port, int adress) {
     perror("Error accepting connection");
     exit(1);
     }
-    dbg(1,"Accepted connection from %s:%d", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+    msg(INFO,"Accepted connection from %s:%d", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+    // Cconnection struct
+    connection* client_connection = &list->connections[list->connections_num++];
+    client_connection->socket = newfd;
+    client_connection->address = client_addr;
+
+    printf(" list->connections_num = %d\n",list->connections_num);
+
 
     pthread_t thread;
 
-    int rc = pthread_create(&thread, NULL, handle_connection, (void *) &newfd);
+    int rc = pthread_create(&thread, NULL, handle_connection, (void *) client_connection);
     if (rc) {
         perror("Error creating new thread");
         exit(1);
     }
     goto connect;
-
+    shmctl(co_shmid, IPC_RMID, NULL);
     close(sockfd);
     return;
 }
 
 void *handle_connection(void *threadarg) {
 
-    int newfd = *((int *) threadarg);
+    connection* conn = (connection*) threadarg;
+
+    msg(INFO,"New connection thread started, wainting for INIT call...");
+    // wait for an INIT call
+    char buffer[1024];
+    int n = read(conn->socket, buffer, 1024);
+    printf("Received %d bytes: %s\n", n, buffer);
+    if (n < 0 || n == 0) {
+        msg(WARNING,"Client disconnected");
+        // exit the thread
+        return NULL;          
+    }
+    // check for http spam 
+    if (!strncmp(buffer, "{", 1)) {
+        msg(WARNING,"SPAM request, ignoring");
+        return NULL;
+    }
+
+    PyDictObject* init_res = handle_request(buffer, conn);
+    if (init_res == NULL) {
+        msg(ERROR,"INIT call failed, exiting thread");
+        close(conn->socket);
+        return NULL;
+    }
+    dbg(1,"Request sucessfully handled");
+
+
+    // get init_res["headers"]["Connection-ID]
+    PyObject* connection_id = PyDict_GetItemString(PyDict_GetItemString((PyObject*)init_res, "headers"), "Connection-ID");
+    strcpy(conn->cuuid,PyUnicode_AsUTF8(connection_id));
+    // get init_res["headers"]["Client-Name]
+    PyObject* client_name = PyDict_GetItemString(PyDict_GetItemString((PyObject*)init_res, "headers"), "Client-Name");
+    strcpy(conn->client_name,PyUnicode_AsUTF8(client_name));
+    dbg(1,"Connection-ID: %s", conn->cuuid);
+    dbg(1,"Client-Name: %s", conn->client_name);
+
+    // free memory
+    Py_DECREF(init_res);
+    Py_DECREF(connection_id);
+    Py_DECREF(client_name);
+
+    msg(INFO,"INIT call received (CUUID = %s), starting loop...", conn->cuuid);
+
 
     // At this point, you can communicate with the client using the newfd file descriptor
     while (1) {
         char buffer[1024];
-        int n = read(newfd, buffer, 1024);
+        int n = read(conn->socket, buffer, 1024);
         if (n < 0 || n == 0) {
             msg(WARNING,"Client disconnected");
             // exit the thread
             return NULL;          
         }
-        //printf("Received %d bytes: %s\n", n, buffer);
+        printf("Received %d bytes: %s\n", n, buffer);
 
-        // check if its an http request
-        if (strncmp(buffer, "GET", 3) == 0) {
-            msg(WARNING,"HTTP request, ignoring");
-            continue;
-        }
-
-        // Handle the request
-        const char* response = handle_request(buffer);
-
-        if (response == NULL) {
-            msg(WARNING,"Response is NULL, ignoring");
-            continue;
-        }
-
-        n = write(newfd, response, strlen(response));
-        if (n < 0) {
-            perror("Error writing to socket");
-            exit(1);
-        }
     }
 
-    close(newfd);
+    close(conn->socket);
     pthread_exit(NULL);
 }

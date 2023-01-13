@@ -2,17 +2,19 @@
 Here we have the python/C interface.
 */
 #include <stdlib.h>
-
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <python3.10/Python.h>
 
+
+#include "../include/server.h"
+#include "../include/cutils.h"
+
 // Global variables to store references to the imported module and handle_request function
 PyObject* module = NULL;
-PyObject* request_handler = NULL;
-PyObject* request_composer = NULL;
-
+PyObject* function = NULL;
 
 
 // Function to initialize the Python interpreter and import the module containing the handle_request function
@@ -35,20 +37,11 @@ int load_python_module(const char* module_name) {
     }
 
     // Get a reference to the handle_request function
-    request_handler = PyObject_GetAttrString(module, "handle_request");
-    if (request_handler == NULL || !PyCallable_Check(request_handler)) {
+    function = PyObject_GetAttrString(module, "handle_request");
+    if (function == NULL || !PyCallable_Check(function)) {
         // An error occurred
         PyErr_Print();
-        Py_XDECREF(request_handler);
-        Py_DECREF(module);
-        return 0;
-    }
-
-    request_composer = PyObject_GetAttrString(module, "create_request");
-    if (request_composer == NULL || !PyCallable_Check(request_composer)) {
-        // An error occurred
-        PyErr_Print();
-        Py_XDECREF(request_composer);
+        Py_XDECREF(function);
         Py_DECREF(module);
         return 0;
     }
@@ -56,58 +49,41 @@ int load_python_module(const char* module_name) {
     return 1;
 }
 
-// Wrapper function for the Python handle_request function
-const char* handle_request(const char* request) {
-  if (module == NULL || request_handler == NULL) {
-    fprintf(stderr, "Error: Python module or function not loaded\n");
-    return NULL;
-  }
+PyDictObject* handle_request(const char* request_str, connection* conn) {
+    if (module == NULL) {
+        fprintf(stderr, "Error: Python module not loaded\n");
+        return NULL;
+    }
+    
+    // Convert the request string to a Python string object
+    PyObject* py_request = PyUnicode_FromString(request_str);
 
-  // Convert the request string to a Python string object
-  PyObject* py_request = PyUnicode_FromString(request);
+    // Create a Python dictionary to hold the connection struct data
+    PyObject* py_conn = PyDict_New();
+    PyDict_SetItemString(py_conn, "address", PyUnicode_FromString(inet_ntoa(conn->address.sin_addr)));
+    PyDict_SetItemString(py_conn, "port", PyLong_FromLong(conn->address.sin_port));
+    PyDict_SetItemString(py_conn, "socket", PyLong_FromLong(conn->socket));
+    PyDict_SetItemString(py_conn, "cuuid", PyUnicode_FromString(conn->cuuid));
 
-  // Call the handle_request function with the request string as an argument
-  PyObject* result = PyObject_CallFunctionObjArgs(request_handler, py_request, NULL);
-  Py_DECREF(py_request);
+    dbg(1,"Python: Calling handle_request function with request string");
+    // Call the handle_request function with the request string and conn dict as arguments
+    PyObject* result = PyObject_CallFunctionObjArgs(function, py_request, py_conn, NULL);
+    Py_DECREF(py_request);
+    Py_DECREF(py_conn);
 
-  if (result == NULL) {
-    // An error occurred
-    PyErr_Print();
-    return NULL;
-  }
+    if (result == NULL) {
+        msg(ERROR,"Python: handle_request function returned NULL");
+        PyErr_Print();
+        exit(1);
+    }
+    PyDictObject* dict = NULL;
+    if (PyDict_Check(result)) {
+      PyDictObject* dict = (PyDictObject*) result;
+      // do something with the dictionary
+    } else {
+        fprintf(stderr, "Error: handle_request did not return a dictionary\n");
+        exit(1);
+    }
 
-  // Convert the result to a C string
-  const char* response = PyUnicode_AsUTF8(result);
-  Py_DECREF(result);
-
-  return response;
+    return dict;
 }
-
-const char* create_request(const char* text,const char* cid) {
-  if (module == NULL || request_composer == NULL) {
-    fprintf(stderr, "Error: Python module or function not loaded\n");
-    return NULL;
-  }
-
-  // Convert the request string to a Python string object
-  // Convert the request string to a Python string object
-  PyObject* py_request = PyUnicode_FromString(request);
-
-  // Call the handle_request function with the request string as an argument
-  PyObject* result = PyObject_CallFunctionObjArgs(request_handler, py_request, NULL);
-  Py_DECREF(py_request);
-
-  if (result == NULL) {
-    // An error occurred
-    PyErr_Print();
-    return NULL;
-  }
-
-  // Convert the result to a C string
-  const char* response = PyUnicode_AsUTF8(result);
-  Py_DECREF(result);
-
-  return response;
-}
-
-

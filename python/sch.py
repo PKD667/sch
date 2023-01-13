@@ -1,4 +1,4 @@
-import json
+import json,os
 
 CONNECTIONS = {}
 
@@ -11,15 +11,18 @@ base_request = {
 }
 
 
-def do_TEST(request :dict) -> dict:
+def do_TEST(request :dict,connection) -> dict:
     response = base_request
     response["body"] = {
         "text" : "Hi ! This is a test response."
     }
     response["method"] = "TEST"
-    return json.dumps(response)
+    
+    os.write(connection["socket"],json.dumps(response).encode())
 
-def do_INIT(request :dict) -> dict:
+    return
+
+def do_INIT(request :dict,connection) -> dict:
     cid = request["headers"]["Connection-ID"]
     CONNECTIONS[cid] = {
         "status" : "OPEN",
@@ -30,9 +33,11 @@ def do_INIT(request :dict) -> dict:
     response["body"] = { "text" : "Connection established." }
     response["method"] = "INIT"
 
-    return response
+    os.write(connection["socket"],json.dumps(response).encode())
 
-def do_CHAT(request :dict) -> dict:
+    return 
+
+def do_CHAT(request :dict,connection) -> dict:
     cid = request["headers"]["Connection-ID"]
 
     if (not cid in CONNECTIONS) or (CONNECTIONS[cid]["status"] != "OPEN"):
@@ -51,10 +56,10 @@ def do_CHAT(request :dict) -> dict:
 methods = {
     "TEST" : do_TEST,
     "INIT" : do_INIT,
-    "CHAT" : do_CHAT
+    "CHAT" : 420
 }
 
-def handle_request(request :str) -> str: 
+def handle_request(request :str,connection :dict) -> dict: 
     json_request = json.loads(request)
 
     print(f'Method: {json_request["method"]}')
@@ -65,29 +70,10 @@ def handle_request(request :str) -> str:
     print(f'Body: {json.dumps(json_request["body"],indent=4)}')
 
     fun = methods[json_request["method"]]
-    response = fun(json_request)
+    if fun != 420:
+        print("No associated method")
+        fun(json_request,connection)
 
-    if response == None:
-        return None
-
-    return json.dumps(response)
-
-def create_request(body,method,cid,headers={}):
-    request = base_request
-    request["method"] = method
-    if type(request) == dict:
-        request["body"] = body
-    elif type(request) == str:
-        request["body"]["text"] = body
-    else:
-        # throw type exception
-        raise TypeError("Invalid type for request variable. Expected dict or str, got {}".format(type(request)))
-    
-    request["headers"] = headers
-    request["headers"]["Connection-ID"] = cid
-
-    
-    request_str = json.dumps(request)
-    return request_str
-
+    print(f"Request handled successfully , returning {json.dumps(json_request,indent=4)}")
+    return json_request
 

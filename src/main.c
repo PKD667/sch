@@ -8,6 +8,7 @@ Copyright (C) 2019-2020 by pkd@sovietlinux.ml.
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/shm.h>
 #include <unistd.h>
 #include <signal.h>
 
@@ -21,6 +22,8 @@ void sigint_handler(int signum) {
   msg(ERROR,"Caught SIGINT, exiting");
   // Close the server socket
   close(sockfd);
+  // close shared memory
+  shmctl(co_shmid, IPC_RMID, NULL);
   exit(0);
 }
 
@@ -34,6 +37,7 @@ int main(int argc, char *argv[]) {
   sigemptyset(&action.sa_mask);
   action.sa_flags = 0;
   sigaction(SIGINT, &action, NULL);
+
 
   //init python
   load_python_module("sch");
