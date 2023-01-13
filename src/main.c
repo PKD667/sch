@@ -29,6 +29,17 @@ void sigint_handler(int signum) {
 
 int main(int argc, char *argv[]) {
   
+  // get args 
+  if (argc < 2) {
+    printf("Usage: %s port [adress]\n", argv[0]);
+    return 1;
+  }
+  int port = atoi(argv[1]);
+  int adress = INADDR_ANY;
+  if (argc > 2) {
+    adress = atoi(argv[2]);
+  }
+
   DEBUG = 3;
 
   // Set up the signal handler for SIGINT
@@ -48,9 +59,6 @@ int main(int argc, char *argv[]) {
     perror("Error creating socket");
     exit(1);
   }
-
-  int port = 8080;
-  int adress = INADDR_ANY;
   launch_server(port, adress);
   return 0;
 }

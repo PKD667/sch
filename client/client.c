@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/shm.h>
+#include <unistd.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -25,6 +26,8 @@ int main(int argc, char *argv[]) {
         connection *conn = &list->connections[i];
         printf("Connection %d: %s:%d\n", i, inet_ntoa(conn->address.sin_addr), ntohs(conn->address.sin_port));
     }
+
+
 
     if (shmdt(list) == -1) {
         perror("Error detaching shared memory segment");
