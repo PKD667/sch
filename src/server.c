@@ -18,7 +18,7 @@
 
 int sockfd;
 
-int co_shmid;
+conn_list list[20];
 
 void *handle_connection(void *threadarg);
 
@@ -29,8 +29,8 @@ void launch_server(int port, int adress) {
     // Create a socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
-    perror("Error creating socket");
-    exit(1);
+        perror("Error creating socket");
+        exit(1);
     }
 
     // Set up the address structure for the server
@@ -41,36 +41,19 @@ void launch_server(int port, int adress) {
     dbg(1,"Before bind() call");
     // Bind the socket to the address
     if (bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
-    perror("Error binding socket");
-    exit(1);
+        perror("Error binding socket");
+        exit(1);
     }
     dbg(1,"Bind successful, continuing...");
 
     // Listen for incoming connections
     if (listen(sockfd, 1024) < 0) {
-    perror("Error listening for connections");
-    exit(1);
+        perror("Error listening for connections");
+        exit(1);
     }
     dbg(1,"Listening for connections on port %d...", port);
 
-    // now do the memory stuff
-    // Create shared memory segment
-    co_shmid = shmget(IPC_PRIVATE, sizeof(conn_list), IPC_CREAT | 0666);
-    if (co_shmid < 0) {
-        perror("Error creating shared memory segment");
-        exit(1);
-    }
 
-    // Attach shared memory segment to the server process
-    conn_list *list = shmat(co_shmid, NULL, 0);
-    if (list == (void*)-1) {
-        perror("Error attaching shared memory segment");
-        exit(1);
-    }
-
-    printf(" list = %p\n",list);
-    printf("shmid = %d\n",co_shmid);
-    
 
     connect:
 
@@ -78,8 +61,8 @@ void launch_server(int port, int adress) {
     addr_len = sizeof(client_addr);
     int newfd = accept(sockfd, (struct sockaddr *) &client_addr, &addr_len);
     if (newfd < 0) {
-    perror("Error accepting connection");
-    exit(1);
+        perror("Error accepting connection");
+        exit(1);
     }
     msg(INFO,"Accepted connection from %s:%d", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
@@ -99,7 +82,6 @@ void launch_server(int port, int adress) {
         exit(1);
     }
     goto connect;
-    shmctl(co_shmid, IPC_RMID, NULL);
     close(sockfd);
     return;
 }

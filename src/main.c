@@ -22,8 +22,6 @@ void sigint_handler(int signum) {
   msg(ERROR,"Caught SIGINT, exiting");
   // Close the server socket
   close(sockfd);
-  // close shared memory
-  shmctl(co_shmid, IPC_RMID, NULL);
   exit(0);
 }
 
@@ -31,7 +29,7 @@ int main(int argc, char *argv[]) {
   
   // get args 
   if (argc < 2) {
-    printf("Usage: %s port [adress]\n", argv[0]);
+    printf("Usage: %s <port> [adress]\n", argv[0]);
     return 1;
   }
   int port = atoi(argv[1]);

@@ -27,6 +27,7 @@ int main(int argc, char *argv[]) {
         printf("Connection %d: %s:%d\n", i, inet_ntoa(conn->address.sin_addr), ntohs(conn->address.sin_port));
     }
 
+    
 
 
     if (shmdt(list) == -1) {

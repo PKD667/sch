@@ -17,7 +17,7 @@ typedef struct {
     connection connections[64];
 } conn_list;
 
-extern int co_shmid;
+extern conn_list list[20];
 
 
 void launch_server(int port, int adress);
